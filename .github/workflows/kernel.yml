@@ -1,0 +1,59 @@
+# Put this at .github/workflows/kernel.yml in a PUBLIC repo that also contains compile.sh
+# (public repo = free, unlimited standard runners with 4 vCPU / 16 GB; private = 2 vCPU / 8 GB)
+#
+# Repo secrets (Settings > Secrets and variables > Actions):
+#   TG_TOKEN, TG_CHAT          Telegram bot token + chat id   (optional)
+#   ANTHROPIC_API_KEY          AI diagnosis on failure        (optional)
+name: Build kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Kernel branch
+        default: lineage-24.0
+      no_lto:
+        description: "Force LTO/CFI off (1 or 0)"
+        default: "1"
+      zip_kernel:
+        description: "What goes in the zip: both | gz | raw"
+        default: both
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      WORK: ${{ github.workspace }}/kbuild
+      TC_DIR: ${{ github.workspace }}/toolchains
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache toolchains
+        uses: actions/cache@v4
+        with:
+          path: toolchains
+          key: toolchains-clang-r416183b-v1
+
+      - name: Build
+        env:
+          KERNEL_BRANCH: ${{ inputs.branch }}
+          NO_LTO: ${{ inputs.no_lto }}
+          ZIP_KERNEL: ${{ inputs.zip_kernel }}
+          INSTALL_DEPS: "1"
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          chmod +x compile.sh
+          ./compile.sh
+
+      - name: Upload zip + log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-${{ github.run_number }}
+          path: |
+            kbuild/dist/*.zip
+            kbuild/build-*.log
+          if-no-files-found: warn
